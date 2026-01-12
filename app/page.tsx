@@ -32,9 +32,16 @@ export default async function Page({
 }) {
   const sp = (await Promise.resolve(searchParams)) ?? {};
   const cookieStore = await cookies();
-  const isPremium = cookieStore.get("wc_premium")?.value === "1";
 
-  // ===== Inputs (avec defaults)
+  // Cookie premium
+  const cookiePremium = cookieStore.get("wc_premium")?.value === "1";
+
+  // ✅ Override via URL: ?mode=free ou ?mode=premium
+  const mode = param(sp, "mode", ""); // "", "free", "premium"
+  const isPremium =
+    mode === "premium" ? true : mode === "free" ? false : cookiePremium;
+
+  // ===== Inputs (defaults)
   const sex = param(sp, "sex", "male"); // male | female
   const goal = param(sp, "goal", "cut"); // cut | maintain | bulk
   const activity = param(sp, "activity", "moderate"); // low | moderate | high
@@ -64,7 +71,7 @@ export default async function Page({
   const fat = round(weight * (goal === "cut" ? 0.8 : 0.9));
   const carbs = Math.max(0, round((calories - protein * 4 - fat * 9) / 4));
 
-  // jours training / rest
+  // jours training / rest (Premium)
   const train = {
     p: protein,
     c: round(carbs * 1.15),
@@ -108,7 +115,7 @@ export default async function Page({
   }
   const months = weeks !== null ? Math.round((weeks / 4.345) * 10) / 10 : null;
 
-  // ===== Styles (proches du rendu premium)
+  // ===== Styles (beau rendu)
   const S = {
     page: {
       minHeight: "100vh",
@@ -142,9 +149,11 @@ export default async function Page({
       borderRadius: 999,
       fontSize: 12,
       fontWeight: 800,
-      border: "1px solid rgba(34,197,94,.45)",
-      background: "rgba(34,197,94,.15)",
-      color: "#a7f3d0",
+      border: isPremium
+        ? "1px solid rgba(34,197,94,.45)"
+        : "1px solid rgba(255,255,255,.20)",
+      background: isPremium ? "rgba(34,197,94,.15)" : "rgba(255,255,255,.08)",
+      color: isPremium ? "#a7f3d0" : "#e9e9f2",
       whiteSpace: "nowrap",
     } as const,
     grid: {
@@ -247,6 +256,12 @@ export default async function Page({
       border: "none",
       margin: "12px 0",
     } as const,
+    linkSmall: {
+      fontSize: 12,
+      opacity: 0.75,
+      textDecoration: "none",
+      color: "#e8e8f0",
+    } as const,
   };
 
   return (
@@ -261,11 +276,24 @@ export default async function Page({
             </div>
           </div>
 
-          <div style={S.badge}>{isPremium ? "✅ Premium" : "🔒 Free"}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* ✅ Switch dev via URL (sans rien créer) */}
+            <a href="/?mode=free" style={S.linkSmall}>
+              Forcer Free
+            </a>
+            <a href="/?mode=premium" style={S.linkSmall}>
+              Forcer Premium
+            </a>
+
+            <div style={S.badge}>{isPremium ? "✅ Premium" : "🔒 Free"}</div>
+          </div>
         </div>
 
-        {/* ===== FORM = calcul en GET (stable, pas figé) */}
+        {/* FORM GET */}
         <form method="get" action="/">
+          {/* garder le mode si présent */}
+          {mode ? <input type="hidden" name="mode" value={mode} /> : null}
+
           <div style={S.grid}>
             <select name="sex" defaultValue={sex} style={S.field}>
               <option value="male">Homme</option>
@@ -285,22 +313,8 @@ export default async function Page({
             </select>
 
             <input name="age" type="number" defaultValue={age} style={S.field} placeholder="Âge" />
-
-            <input
-              name="height"
-              type="number"
-              defaultValue={height}
-              style={S.field}
-              placeholder="Taille (cm)"
-            />
-
-            <input
-              name="weight"
-              type="number"
-              defaultValue={weight}
-              style={S.field}
-              placeholder="Poids (kg)"
-            />
+            <input name="height" type="number" defaultValue={height} style={S.field} placeholder="Taille (cm)" />
+            <input name="weight" type="number" defaultValue={weight} style={S.field} placeholder="Poids (kg)" />
 
             <input
               name="targetWeight"
@@ -311,20 +325,14 @@ export default async function Page({
           </div>
 
           <div style={S.btnRow}>
-            {/* ✅ reset VRAI */}
-            <a href="/" style={{ textDecoration: "none" }}>
-              <button type="button" style={S.btn}>
-                Réinitialiser
-              </button>
+            <a href={mode ? `/?mode=${mode}` : "/"} style={{ textDecoration: "none" }}>
+              <button type="button" style={S.btn}>Réinitialiser</button>
             </a>
-
-            <button type="submit" style={S.btnPrimary}>
-              Calculer
-            </button>
+            <button type="submit" style={S.btnPrimary}>Calculer</button>
           </div>
         </form>
 
-        {/* ===== Résultats (FREE + PREMIUM) */}
+        {/* Résultats */}
         <div style={S.pills}>
           <div style={S.pill}>BMR ≈ {round(bmr)} kcal</div>
           <div style={S.pill}>TDEE ≈ {round(tdee)} kcal</div>
@@ -365,19 +373,15 @@ export default async function Page({
           </div>
         </div>
 
-        {/* =========================================================
-            ✅ 2 ÉTATS (Free / Premium)
-           ========================================================= */}
-
         {!isPremium ? (
           <>
             <hr style={S.hr} />
 
-            {/* ===== ETAT GRATUIT */}
+            {/* FREE: tu gardes ton flow existant (bouton -> /premium ou -> stripe) */}
             <div style={S.premiumBox}>
               <div style={S.premiumTitle}>🔒 Premium (débloque le vrai programme)</div>
               <div style={S.note}>
-                Tu as le calcul de base. En Premium tu obtiens :
+                En Premium tu obtiens :
                 <ul style={{ margin: "8px 0 0 18px", opacity: 0.9 }}>
                   <li>Jours entraînement vs repos (kcal + macros)</li>
                   <li>Répartition calories par repas</li>
@@ -386,7 +390,7 @@ export default async function Page({
               </div>
 
               <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                {/* ✅ IMPORTANT: on va vers /premium (page email) */}
+                {/* ✅ Ici tu peux mettre /premium plus tard */}
                 <a href="/premium" style={{ textDecoration: "none" }}>
                   <button type="button" style={S.btnPrimary}>
                     Débloquer Premium
@@ -399,7 +403,7 @@ export default async function Page({
           <>
             <hr style={S.hr} />
 
-            {/* ===== ETAT PREMIUM */}
+            {/* PREMIUM */}
             <div style={S.premiumBox}>
               <div style={S.premiumTitle}>✅ Programme Premium</div>
 
@@ -428,7 +432,7 @@ export default async function Page({
                 ) : weeks === null ? (
                   <div style={S.note}>Objectif incohérent avec le mode choisi (ex: sèche mais objectif plus haut).</div>
                 ) : weeks === 0 ? (
-                  <div style={S.note}>Objectif “Maintien” : durée non applicable (tu stabilises).</div>
+                  <div style={S.note}>Objectif “Maintien” : durée non applicable.</div>
                 ) : (
                   <div style={S.note}>
                     ⏱️ Temps cible estimé : <b>{weeks} semaines</b> (≈ {months} mois)
