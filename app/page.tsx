@@ -30,6 +30,12 @@ function fmtWeeksMonths(weeks: number) {
   return { weeks, months };
 }
 
+function qs(params: Record<string, string>) {
+  const usp = new URLSearchParams(params);
+  const s = usp.toString();
+  return s ? `?${s}` : "";
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -305,7 +311,20 @@ export default async function Page({
       background: "rgba(0,0,0,.22)",
       opacity: 0.9,
     } as const,
+    link: { color: "#bbf7d0", fontWeight: 900, textDecoration: "none" } as const,
   };
+
+  // ===== Link vers la page "unlock" en conservant les inputs
+  const unlockHref = `/${qs({
+    view: "unlock",
+    sex,
+    goal,
+    activity,
+    age: String(age),
+    height: String(height),
+    weight: String(weight),
+    targetWeight: targetWeightRaw,
+  })}`;
 
   // ===== FORM (home) : stable, calcul en GET
   const CalcForm = (
@@ -317,7 +336,8 @@ export default async function Page({
         </select>
 
         <select name="goal" defaultValue={goal} style={S.field}>
-          <option value="cut">Sèche</option>
+          {/* ✅ changé : “Sèche” -> “Perte de poids” */}
+          <option value="cut">Perte de poids</option>
           <option value="maintain">Maintien</option>
           <option value="bulk">Prise de masse</option>
         </select>
@@ -443,6 +463,7 @@ export default async function Page({
 
             <div style={{ marginTop: 12 }}>
               <form action="/api/create-checkout" method="post">
+                {/* email */}
                 <input
                   name="email"
                   type="email"
@@ -452,8 +473,17 @@ export default async function Page({
                   placeholder="ton.email@gmail.com"
                 />
 
+                {/* ✅ on garde aussi les inputs dans le POST (utile si ton endpoint veut les relire plus tard) */}
+                <input type="hidden" name="sex" value={sex} />
+                <input type="hidden" name="goal" value={goal} />
+                <input type="hidden" name="activity" value={activity} />
+                <input type="hidden" name="age" value={String(age)} />
+                <input type="hidden" name="height" value={String(height)} />
+                <input type="hidden" name="weight" value={String(weight)} />
+                <input type="hidden" name="targetWeight" value={targetWeightRaw} />
+
                 <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
-                  <a href="/" style={{ textDecoration: "none" }}>
+                  <a href={`/${qs({ sex, goal, activity, age: String(age), height: String(height), weight: String(weight), targetWeight: targetWeightRaw })}`} style={{ textDecoration: "none" }}>
                     <button type="button" style={S.btn}>
                       Retour
                     </button>
@@ -468,7 +498,7 @@ export default async function Page({
           </div>
 
           <div style={{ marginTop: 14, opacity: 0.7, fontSize: 12 }}>
-            Astuce : si tu es en test, mets ton email pour forcer l’envoi (DEV_FORCE_EMAIL).
+            Après l’email reçu : clique sur le lien → cookie Premium activé → accès complet.
           </div>
         </div>
       </main>
@@ -531,7 +561,7 @@ export default async function Page({
               <div style={S.overlay}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                   <div style={S.miniTag}>🔒 Contenu Premium</div>
-                  <a href="/?view=unlock" style={{ textDecoration: "none" }}>
+                  <a href={unlockHref} style={{ textDecoration: "none" }}>
                     <button style={S.btnPrimary}>Débloquer Premium</button>
                   </a>
                 </div>
@@ -542,127 +572,23 @@ export default async function Page({
           <>
             <hr style={S.hr} />
 
-            {/* Premium: 3 jours + temps cible */}
+            {/* Premium (sur le home) : on laisse un résumé + lien vers /premium */}
             <div style={S.premiumBox}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-                <div style={S.premiumTitle}>✅ Programme Premium</div>
-                <div style={{ opacity: 0.85, fontSize: 12, fontWeight: 800 }}>
-                  Standard • Entraînement • Repos
-                </div>
+                <div style={S.premiumTitle}>✅ Premium activé</div>
+                <a href="/premium" style={S.link}>
+                  Voir le programme complet →
+                </a>
               </div>
 
-              {[
-                {
-                  title: "Jour standard",
-                  subtitle: "Base quotidienne (jour moyen)",
-                  kcal: standardKcal,
-                  macros: standard,
-                  meals: mealKcalsStandard,
-                  border: "rgba(139,92,246,.55)",
-                  bg: "rgba(139,92,246,.10)",
-                  txt: "#ddd6fe",
-                },
-                {
-                  title: "Jour entraînement",
-                  subtitle: "Plus de glucides, lipides un peu plus bas",
-                  kcal: trainKcal,
-                  macros: train,
-                  meals: mealKcalsTrain,
-                  border: "rgba(34,197,94,.55)",
-                  bg: "rgba(34,197,94,.12)",
-                  txt: "#bbf7d0",
-                },
-                {
-                  title: "Jour repos",
-                  subtitle: "Moins de glucides, lipides un peu plus hauts",
-                  kcal: restKcal,
-                  macros: rest,
-                  meals: mealKcalsRest,
-                  border: "rgba(59,130,246,.55)",
-                  bg: "rgba(59,130,246,.10)",
-                  txt: "#bfdbfe",
-                },
-              ].map((d) => (
-                <div
-                  key={d.title}
-                  style={{
-                    borderRadius: 14,
-                    border: `1px solid ${d.border}`,
-                    background: d.bg,
-                    padding: 14,
-                    marginTop: 12,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 950 }}>{d.title}</div>
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>{d.subtitle}</div>
-                    </div>
+              <div style={S.note}>
+                <b>Standard</b> : {standardKcal} kcal — P {standard.p}g · C {standard.c}g · L {standard.f}g <br />
+                <b>Entraînement</b> : {trainKcal} kcal — P {train.p}g · C {train.c}g · L {train.f}g <br />
+                <b>Repos</b> : {restKcal} kcal — P {rest.p}g · C {rest.c}g · L {rest.f}g
+              </div>
 
-                    <div
-                      style={{
-                        borderRadius: 999,
-                        padding: "8px 10px",
-                        border: `1px solid ${d.border}`,
-                        background: "rgba(0,0,0,.14)",
-                        color: d.txt,
-                        fontWeight: 950,
-                        fontSize: 13,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {d.kcal} kcal / jour
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                      gap: 10,
-                      marginTop: 10,
-                    }}
-                  >
-                    {[
-                      { label: "Protéines", value: `${d.macros.p} g`, sub: `≈ ${d.macros.p * 4} kcal` },
-                      { label: "Glucides", value: `${d.macros.c} g`, sub: `≈ ${d.macros.c * 4} kcal` },
-                      { label: "Lipides", value: `${d.macros.f} g`, sub: `≈ ${d.macros.f * 9} kcal` },
-                    ].map((m) => (
-                      <div
-                        key={m.label}
-                        style={{
-                          borderRadius: 12,
-                          border: "1px solid rgba(255,255,255,.14)",
-                          background: "rgba(0,0,0,.16)",
-                          padding: 10,
-                        }}
-                      >
-                        <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 900 }}>
-                          {m.label.toUpperCase()}
-                        </div>
-                        <div style={{ fontSize: 18, fontWeight: 950, marginTop: 4 }}>{m.value}</div>
-                        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>{m.sub}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ marginTop: 12 }}>
-                    <div style={{ fontWeight: 900, opacity: 0.95 }}>Répartition calories / repas</div>
-                    <div style={S.mealGrid}>
-                      {d.meals.map((m) => (
-                        <div key={m.label} style={S.mealCard}>
-                          <div style={S.mealLabel}>{m.label}</div>
-                          <div style={S.mealKcal}>{m.kcal} kcal</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Temps cible */}
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 950, fontSize: 14 }}>⏱️ Temps cible (estimation)</div>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 900, opacity: 0.95 }}>Temps cible (estimation)</div>
 
                 {!Number.isFinite(targetWeight) ? (
                   <div style={S.note}>
@@ -670,7 +596,7 @@ export default async function Page({
                   </div>
                 ) : weeks === null ? (
                   <div style={S.note}>
-                    Objectif incohérent avec le mode choisi (ex: sèche mais objectif plus haut).
+                    Objectif incohérent avec le mode choisi (ex: perte de poids mais objectif plus haut).
                   </div>
                 ) : weeks === 0 ? (
                   <div style={S.note}>
@@ -688,10 +614,6 @@ export default async function Page({
                     })()}
                   </div>
                 )}
-
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-                  Conseil : vise 3–4 repas, garde les protéines stables, ajuste les glucides selon entraînement/repos.
-                </div>
               </div>
             </div>
           </>

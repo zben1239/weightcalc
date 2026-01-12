@@ -31,7 +31,9 @@ export async function POST(req: Request) {
   }
 
   const form = await req.formData();
-  const emailRaw = String(form.get("email") ?? "").trim().toLowerCase();
+  const emailRaw = String(form.get("email") ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!emailRaw || !isValidEmail(emailRaw)) {
     return new Response("Invalid email", { status: 400 });
@@ -42,7 +44,8 @@ export async function POST(req: Request) {
     apiVersion: "2025-12-15.clover",
   });
 
-  const successUrl = `${baseUrl}/success?email=${encodeURIComponent(emailRaw)}`;
+  // ⚠️ OBLIGATOIRE : session_id pour la page success
+  const successUrl = `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${baseUrl}/?canceled=1`;
 
   const session = await stripe.checkout.sessions.create({
@@ -50,7 +53,6 @@ export async function POST(req: Request) {
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: emailRaw,
 
-    // Très utile pour ton webhook: tu récupères l'email facilement
     metadata: {
       email: emailRaw,
       app: process.env.APP_NAME || "WeightCalc",
@@ -59,7 +61,6 @@ export async function POST(req: Request) {
     success_url: successUrl,
     cancel_url: cancelUrl,
 
-    // Optionnel
     allow_promotion_codes: true,
   });
 
