@@ -25,6 +25,10 @@ function round(n: number) {
   return Math.round(n);
 }
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -33,15 +37,10 @@ export default async function Page({
   const sp = (await Promise.resolve(searchParams)) ?? {};
   const cookieStore = await cookies();
 
-  // Cookie premium
-  const cookiePremium = cookieStore.get("wc_premium")?.value === "1";
+  // ✅ Premium seulement si cookie = 1 (donc Free par défaut)
+  const isPremium = cookieStore.get("wc_premium")?.value === "1";
 
-  // ✅ Override via URL: ?mode=free ou ?mode=premium
-  const mode = param(sp, "mode", ""); // "", "free", "premium"
-  const isPremium =
-    mode === "premium" ? true : mode === "free" ? false : cookiePremium;
-
-  // ===== Inputs (defaults)
+  // ===== Inputs defaults
   const sex = param(sp, "sex", "male"); // male | female
   const goal = param(sp, "goal", "cut"); // cut | maintain | bulk
   const activity = param(sp, "activity", "moderate"); // low | moderate | high
@@ -52,6 +51,13 @@ export default async function Page({
 
   const targetWeightRaw = param(sp, "targetWeight", "");
   const targetWeight = targetWeightRaw ? toNum(targetWeightRaw, NaN) : NaN;
+
+  // email (pour le checkout en FREE)
+  const emailRaw = param(sp, "email", "");
+  const email = emailRaw.trim();
+
+  // UI state: ouvrir le bloc premium si ?unlock=1 (ou si email présent)
+  const unlock = param(sp, "unlock", "") === "1" || (!!email && !isPremium);
 
   // ===== Calculs
   const bmr =
@@ -71,7 +77,7 @@ export default async function Page({
   const fat = round(weight * (goal === "cut" ? 0.8 : 0.9));
   const carbs = Math.max(0, round((calories - protein * 4 - fat * 9) / 4));
 
-  // jours training / rest (Premium)
+  // jours training / rest
   const train = {
     p: protein,
     c: round(carbs * 1.15),
@@ -93,10 +99,7 @@ export default async function Page({
     { label: "Goûter", pct: 0.25 },
     { label: "Dîner", pct: 0.20 },
   ];
-  const mealKcals = meals.map((m) => ({
-    ...m,
-    kcal: round(calories * m.pct),
-  }));
+  const mealKcals = meals.map((m) => ({ ...m, kcal: round(calories * m.pct) }));
 
   // Temps cible (Premium)
   let weeks: number | null = null;
@@ -115,7 +118,7 @@ export default async function Page({
   }
   const months = weeks !== null ? Math.round((weeks / 4.345) * 10) / 10 : null;
 
-  // ===== Styles (beau rendu)
+  // ===== Styles
   const S = {
     page: {
       minHeight: "100vh",
@@ -151,9 +154,9 @@ export default async function Page({
       fontWeight: 800,
       border: isPremium
         ? "1px solid rgba(34,197,94,.45)"
-        : "1px solid rgba(255,255,255,.20)",
-      background: isPremium ? "rgba(34,197,94,.15)" : "rgba(255,255,255,.08)",
-      color: isPremium ? "#a7f3d0" : "#e9e9f2",
+        : "1px solid rgba(255,255,255,.14)",
+      background: isPremium ? "rgba(34,197,94,.15)" : "rgba(255,255,255,.06)",
+      color: isPremium ? "#a7f3d0" : "#e8e8f0",
       whiteSpace: "nowrap",
     } as const,
     grid: {
@@ -227,14 +230,14 @@ export default async function Page({
     cardTitle: { opacity: 0.8, fontSize: 12, fontWeight: 900 } as const,
     cardBig: { fontSize: 26, fontWeight: 950, marginTop: 6 } as const,
     cardSmall: { opacity: 0.75, fontSize: 12, marginTop: 4 } as const,
-    premiumBox: {
+    box: {
       marginTop: 14,
       borderRadius: 14,
       border: "1px solid rgba(34,197,94,.35)",
       background: "rgba(34,197,94,.12)",
       padding: 16,
     } as const,
-    premiumTitle: { fontWeight: 950, fontSize: 16, marginBottom: 8 } as const,
+    boxTitle: { fontWeight: 950, fontSize: 16, marginBottom: 8 } as const,
     note: { opacity: 0.85, fontSize: 13, lineHeight: 1.35 } as const,
     mealGrid: {
       display: "grid",
@@ -256,11 +259,13 @@ export default async function Page({
       border: "none",
       margin: "12px 0",
     } as const,
-    linkSmall: {
-      fontSize: 12,
-      opacity: 0.75,
-      textDecoration: "none",
-      color: "#e8e8f0",
+    inlineRow: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+      marginTop: 12,
     } as const,
   };
 
@@ -275,25 +280,11 @@ export default async function Page({
               {isPremium ? "Premium activé ✅" : "Version gratuite"}
             </div>
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* ✅ Switch dev via URL (sans rien créer) */}
-            <a href="/?mode=free" style={S.linkSmall}>
-              Forcer Free
-            </a>
-            <a href="/?mode=premium" style={S.linkSmall}>
-              Forcer Premium
-            </a>
-
-            <div style={S.badge}>{isPremium ? "✅ Premium" : "🔒 Free"}</div>
-          </div>
+          <div style={S.badge}>{isPremium ? "✅ Premium" : "🔒 Free"}</div>
         </div>
 
-        {/* FORM GET */}
+        {/* ===== FORM = calcul en GET */}
         <form method="get" action="/">
-          {/* garder le mode si présent */}
-          {mode ? <input type="hidden" name="mode" value={mode} /> : null}
-
           <div style={S.grid}>
             <select name="sex" defaultValue={sex} style={S.field}>
               <option value="male">Homme</option>
@@ -312,27 +303,61 @@ export default async function Page({
               <option value="high">Élevé</option>
             </select>
 
-            <input name="age" type="number" defaultValue={age} style={S.field} placeholder="Âge" />
-            <input name="height" type="number" defaultValue={height} style={S.field} placeholder="Taille (cm)" />
-            <input name="weight" type="number" defaultValue={weight} style={S.field} placeholder="Poids (kg)" />
+            <input
+              name="age"
+              type="number"
+              defaultValue={age}
+              style={S.field}
+              placeholder="Âge"
+            />
+
+            <input
+              name="height"
+              type="number"
+              defaultValue={height}
+              style={S.field}
+              placeholder="Taille (cm)"
+            />
+
+            <input
+              name="weight"
+              type="number"
+              defaultValue={weight}
+              style={S.field}
+              placeholder="Poids (kg)"
+            />
 
             <input
               name="targetWeight"
               defaultValue={targetWeightRaw}
               style={{ ...S.field, gridColumn: "span 2" }}
               placeholder="Poids objectif (kg) — Premium"
+              disabled={!isPremium}
             />
+
+            {/* keep unlock/email in URL when using calculate in FREE */}
+            {!isPremium && (
+              <>
+                <input type="hidden" name="unlock" value={unlock ? "1" : ""} />
+                <input type="hidden" name="email" value={email} />
+              </>
+            )}
           </div>
 
           <div style={S.btnRow}>
-            <a href={mode ? `/?mode=${mode}` : "/"} style={{ textDecoration: "none" }}>
-              <button type="button" style={S.btn}>Réinitialiser</button>
+            <a href="/" style={{ textDecoration: "none" }}>
+              <button type="button" style={S.btn}>
+                Réinitialiser
+              </button>
             </a>
-            <button type="submit" style={S.btnPrimary}>Calculer</button>
+
+            <button type="submit" style={S.btnPrimary}>
+              Calculer
+            </button>
           </div>
         </form>
 
-        {/* Résultats */}
+        {/* ===== Résultats */}
         <div style={S.pills}>
           <div style={S.pill}>BMR ≈ {round(bmr)} kcal</div>
           <div style={S.pill}>TDEE ≈ {round(tdee)} kcal</div>
@@ -373,13 +398,15 @@ export default async function Page({
           </div>
         </div>
 
+        {/* =========================
+           FREE vs PREMIUM sections
+        ========================= */}
         {!isPremium ? (
           <>
             <hr style={S.hr} />
 
-            {/* FREE: tu gardes ton flow existant (bouton -> /premium ou -> stripe) */}
-            <div style={S.premiumBox}>
-              <div style={S.premiumTitle}>🔒 Premium (débloque le vrai programme)</div>
+            <div style={S.box}>
+              <div style={S.boxTitle}>🔒 Premium (débloque le vrai programme)</div>
               <div style={S.note}>
                 En Premium tu obtiens :
                 <ul style={{ margin: "8px 0 0 18px", opacity: 0.9 }}>
@@ -389,23 +416,62 @@ export default async function Page({
                 </ul>
               </div>
 
-              <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                {/* ✅ Ici tu peux mettre /premium plus tard */}
-                <a href="/premium" style={{ textDecoration: "none" }}>
-                  <button type="button" style={S.btnPrimary}>
-                    Débloquer Premium
-                  </button>
-                </a>
-              </div>
+              {!unlock ? (
+                <div style={S.inlineRow}>
+                  {/* ouvre le bloc email sans JS */}
+                  <a
+                    href={`/?unlock=1&sex=${sex}&goal=${goal}&activity=${activity}&age=${age}&height=${height}&weight=${weight}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <button type="button" style={S.btnPrimary}>
+                      Débloquer Premium
+                    </button>
+                  </a>
+                </div>
+              ) : (
+                <>
+                  <div style={{ ...S.note, marginTop: 10 }}>
+                    Renseigne ton email (tu recevras la confirmation et ton accès).
+                  </div>
+
+                  {/* ✅ checkout direct (Stripe) */}
+                  <form action="/api/create-checkout" method="post" style={{ marginTop: 10 }}>
+                    <input type="hidden" name="sex" value={sex} />
+                    <input type="hidden" name="goal" value={goal} />
+                    <input type="hidden" name="activity" value={activity} />
+                    <input type="hidden" name="age" value={String(age)} />
+                    <input type="hidden" name="height" value={String(height)} />
+                    <input type="hidden" name="weight" value={String(weight)} />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+                      <input
+                        name="email"
+                        defaultValue={email}
+                        style={S.field}
+                        placeholder="ton@email.com"
+                        inputMode="email"
+                      />
+                      <button type="submit" style={S.btnPrimary}>
+                        Aller au paiement
+                      </button>
+                    </div>
+
+                    {email && !isValidEmail(email) && (
+                      <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+                        ⚠️ Email invalide : vérifie le format.
+                      </div>
+                    )}
+                  </form>
+                </>
+              )}
             </div>
           </>
         ) : (
           <>
             <hr style={S.hr} />
 
-            {/* PREMIUM */}
-            <div style={S.premiumBox}>
-              <div style={S.premiumTitle}>✅ Programme Premium</div>
+            <div style={S.box}>
+              <div style={S.boxTitle}>✅ Programme Premium</div>
 
               <div style={S.note}>
                 <b>Jour entraînement</b> : {trainKcal} kcal — P {train.p}g · C {train.c}g · L {train.f}g <br />
@@ -413,7 +479,9 @@ export default async function Page({
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, opacity: 0.95 }}>Répartition calories / repas</div>
+                <div style={{ fontWeight: 900, opacity: 0.95 }}>
+                  Répartition calories / repas
+                </div>
                 <div style={S.mealGrid}>
                   {mealKcals.map((m) => (
                     <div key={m.label} style={S.mealCard}>
@@ -425,14 +493,22 @@ export default async function Page({
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, opacity: 0.95 }}>Temps cible (estimation)</div>
+                <div style={{ fontWeight: 900, opacity: 0.95 }}>
+                  Temps cible (estimation)
+                </div>
 
                 {!Number.isFinite(targetWeight) ? (
-                  <div style={S.note}>Renseigne ton poids objectif (champ “Poids objectif”) puis clique sur Calculer.</div>
+                  <div style={S.note}>
+                    Renseigne ton poids objectif (champ “Poids objectif”) puis clique sur Calculer.
+                  </div>
                 ) : weeks === null ? (
-                  <div style={S.note}>Objectif incohérent avec le mode choisi (ex: sèche mais objectif plus haut).</div>
+                  <div style={S.note}>
+                    Objectif incohérent (ex: sèche mais objectif plus haut).
+                  </div>
                 ) : weeks === 0 ? (
-                  <div style={S.note}>Objectif “Maintien” : durée non applicable.</div>
+                  <div style={S.note}>
+                    Objectif “Maintien” : durée non applicable (stabilisation).
+                  </div>
                 ) : (
                   <div style={S.note}>
                     ⏱️ Temps cible estimé : <b>{weeks} semaines</b> (≈ {months} mois)
