@@ -2,44 +2,70 @@
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-12-15.clover",
-});
+function getBaseUrl() {
+  const url =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.APP_URL ||
+    process.env.VERCEL_URL ||
+    "";
+  if (!url) return "http://localhost:3000";
+  if (url.startsWith("http")) return url;
+  return `https://${url}`;
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 export async function POST(req: Request) {
-  const form = await req.formData();
-  const email = String(form.get("email") || "").trim();
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const priceId = process.env.STRIPE_PRICE_ID;
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  if (!stripeKey) {
     return new Response("Missing STRIPE_SECRET_KEY", { status: 500 });
   }
-  if (!process.env.STRIPE_PRICE_ID) {
+  if (!priceId) {
     return new Response("Missing STRIPE_PRICE_ID", { status: 500 });
   }
 
-  // base URL
-  const baseUrl =
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.APP_URL ||
-    "http://localhost:3000";
+  const form = await req.formData();
+  const emailRaw = String(form.get("email") ?? "").trim().toLowerCase();
 
-  // (optionnel) ref user inputs (tu peux les enlever si tu veux)
-  const metadata: Record<string, string> = {};
-  for (const k of ["sex", "goal", "activity", "age", "height", "weight"]) {
-    const v = form.get(k);
-    if (v) metadata[k] = String(v);
+  if (!emailRaw || !isValidEmail(emailRaw)) {
+    return new Response("Invalid email", { status: 400 });
   }
+
+  const baseUrl = getBaseUrl();
+  const stripe = new Stripe(stripeKey, {
+    apiVersion: "2025-12-15.clover",
+  });
+
+  const successUrl = `${baseUrl}/success?email=${encodeURIComponent(emailRaw)}`;
+  const cancelUrl = `${baseUrl}/?canceled=1`;
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-    customer_email: email || undefined,
+    line_items: [{ price: priceId, quantity: 1 }],
+    customer_email: emailRaw,
+
+    // Très utile pour ton webhook: tu récupères l'email facilement
+    metadata: {
+      email: emailRaw,
+      app: process.env.APP_NAME || "WeightCalc",
+    },
+
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+
+    // Optionnel
     allow_promotion_codes: true,
-    success_url: `${baseUrl.replace(/\/$/, "")}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${baseUrl.replace(/\/$/, "")}/?unlock=1&email=${encodeURIComponent(email)}`,
-    metadata,
   });
 
-  return Response.redirect(session.url!, 303);
+  if (!session.url) {
+    return new Response("Stripe session has no URL", { status: 500 });
+  }
+
+  return Response.redirect(session.url, 303);
 }
