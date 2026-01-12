@@ -1,6 +1,5 @@
 // app/page.tsx
 import { cookies } from "next/headers";
-import PremiumButton from "./components/PremiumButton";
 
 export const dynamic = "force-dynamic";
 
@@ -285,13 +284,7 @@ export default async function Page({
               <option value="high">Élevé</option>
             </select>
 
-            <input
-              name="age"
-              type="number"
-              defaultValue={age}
-              style={S.field}
-              placeholder="Âge"
-            />
+            <input name="age" type="number" defaultValue={age} style={S.field} placeholder="Âge" />
 
             <input
               name="height"
@@ -318,7 +311,7 @@ export default async function Page({
           </div>
 
           <div style={S.btnRow}>
-            {/* reset VRAI */}
+            {/* ✅ reset VRAI */}
             <a href="/" style={{ textDecoration: "none" }}>
               <button type="button" style={S.btn}>
                 Réinitialiser
@@ -373,7 +366,7 @@ export default async function Page({
         </div>
 
         {/* =========================================================
-            ✅ 2 ÉTATS (FREE / PREMIUM)
+            ✅ 2 ÉTATS (Free / Premium)
            ========================================================= */}
 
         {!isPremium ? (
@@ -382,9 +375,7 @@ export default async function Page({
 
             {/* ===== ETAT GRATUIT */}
             <div style={S.premiumBox}>
-              <div style={S.premiumTitle}>
-                🔒 Premium (débloque le vrai programme)
-              </div>
+              <div style={S.premiumTitle}>🔒 Premium (débloque le vrai programme)</div>
               <div style={S.note}>
                 Tu as le calcul de base. En Premium tu obtiens :
                 <ul style={{ margin: "8px 0 0 18px", opacity: 0.9 }}>
@@ -394,16 +385,13 @@ export default async function Page({
                 </ul>
               </div>
 
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "flex",
-                  gap: 10,
-                  justifyContent: "flex-end",
-                }}
-              >
-                {/* ✅ CTA Paiement Stripe : redirection propre */}
-                <PremiumButton />
+              <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                {/* ✅ IMPORTANT: on va vers /premium (page email) */}
+                <a href="/premium" style={{ textDecoration: "none" }}>
+                  <button type="button" style={S.btnPrimary}>
+                    Débloquer Premium
+                  </button>
+                </a>
               </div>
             </div>
           </>
@@ -416,16 +404,12 @@ export default async function Page({
               <div style={S.premiumTitle}>✅ Programme Premium</div>
 
               <div style={S.note}>
-                <b>Jour entraînement</b> : {trainKcal} kcal — P {train.p}g · C{" "}
-                {train.c}g · L {train.f}g <br />
-                <b>Jour repos</b> : {restKcal} kcal — P {rest.p}g · C {rest.c}g · L{" "}
-                {rest.f}g
+                <b>Jour entraînement</b> : {trainKcal} kcal — P {train.p}g · C {train.c}g · L {train.f}g <br />
+                <b>Jour repos</b> : {restKcal} kcal — P {rest.p}g · C {rest.c}g · L {rest.f}g
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, opacity: 0.95 }}>
-                  Répartition calories / repas
-                </div>
+                <div style={{ fontWeight: 900, opacity: 0.95 }}>Répartition calories / repas</div>
                 <div style={S.mealGrid}>
                   {mealKcals.map((m) => (
                     <div key={m.label} style={S.mealCard}>
@@ -437,35 +421,23 @@ export default async function Page({
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, opacity: 0.95 }}>
-                  Temps cible (estimation)
-                </div>
+                <div style={{ fontWeight: 900, opacity: 0.95 }}>Temps cible (estimation)</div>
 
                 {!Number.isFinite(targetWeight) ? (
-                  <div style={S.note}>
-                    Renseigne ton poids objectif (champ “Poids objectif”) puis
-                    clique sur Calculer.
-                  </div>
+                  <div style={S.note}>Renseigne ton poids objectif (champ “Poids objectif”) puis clique sur Calculer.</div>
                 ) : weeks === null ? (
-                  <div style={S.note}>
-                    Objectif incohérent avec le mode choisi (ex: sèche mais
-                    objectif plus haut).
-                  </div>
+                  <div style={S.note}>Objectif incohérent avec le mode choisi (ex: sèche mais objectif plus haut).</div>
                 ) : weeks === 0 ? (
-                  <div style={S.note}>
-                    Objectif “Maintien” : durée non applicable (tu stabilises).
-                  </div>
+                  <div style={S.note}>Objectif “Maintien” : durée non applicable (tu stabilises).</div>
                 ) : (
                   <div style={S.note}>
-                    ⏱️ Temps cible estimé : <b>{weeks} semaines</b> (≈ {months}{" "}
-                    mois)
+                    ⏱️ Temps cible estimé : <b>{weeks} semaines</b> (≈ {months} mois)
                   </div>
                 )}
               </div>
 
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-                Conseil : vise 3–4 repas, garde les protéines stables, ajuste les
-                glucides selon entraînement/repos.
+                Conseil : vise 3–4 repas, garde les protéines stables, ajuste les glucides selon entraînement/repos.
               </div>
             </div>
           </>
