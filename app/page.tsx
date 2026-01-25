@@ -1,5 +1,5 @@
 // app/page.tsx
-import { cookies } from "next/headers";
+import { getPremiumState } from "./lib/accessStore";
 
 export const dynamic = "force-dynamic";
 
@@ -51,16 +51,14 @@ export default async function Page({
   searchParams?: Promise<SearchParams> | SearchParams;
 }) {
   const sp = (await Promise.resolve(searchParams)) ?? {};
-  const cookieStore = await cookies();
 
-  // ✅ Free / Premium
-  const isPremium = cookieStore.get("wc_premium")?.value === "1";
+  // ✅ Premium = token signé dans cookie (plus jamais "1")
+  const premiumState = await getPremiumState();
+  const isPremium = premiumState.premium;
 
-  // mini routing via query
+  // mini "routing" via query
   const view = param(sp, "view", "home"); // home | unlock
   const openKey = param(sp, "open", ""); // programme | semaine | guide | regles | temps
-
-  // ✅ Prix affiché
   const PRICE_LABEL = "2,99€";
 
   // ===== Inputs (defaults)
@@ -157,7 +155,7 @@ export default async function Page({
       ? { trainDays: 3, restDays: 4, label: "3 jours sport • 4 jours repos" }
       : { trainDays: 4, restDays: 3, label: "4 jours sport • 3 jours repos" };
 
-  // ===== Styles (luxueux / cohérent)
+  // ===== Styles
   const S = {
     page: {
       minHeight: "100vh",
@@ -397,8 +395,7 @@ export default async function Page({
     tdMuted: { opacity: 0.85, fontWeight: 750 } as const,
   };
 
-  // ===== Unlock page (email + paiement)
-  // ✅ On arrive ici soit via CTA, soit en cliquant sur "Ouvrir" en Free (open=...)
+  // ===== Unlock page
   if (!isPremium && view === "unlock") {
     return (
       <main style={S.page}>
@@ -424,11 +421,12 @@ export default async function Page({
             </div>
 
             <div style={S.note}>
-              Premium s’active automatiquement sur ce navigateur (30 jours).
+              Après paiement, Premium est activé automatiquement sur ce navigateur (30 jours).
               <br />
-              Tu reçois aussi un email avec un lien d’accès pour retrouver ton Premium plus tard.
+              Tu recevras aussi un email avec un lien d’accès pour retrouver ton Premium plus tard.
             </div>
 
+            {/* ✅ FORM POST : ton /api/create-checkout redirige en 303 vers Stripe */}
             <form action="/api/create-checkout" method="post" style={{ marginTop: 12 }}>
               <input
                 name="email"
@@ -439,18 +437,10 @@ export default async function Page({
                 placeholder="ton.email@gmail.com"
               />
 
-              {/* ✅ IMPORTANT : on transmet le module cliqué (open) au checkout */}
+              {/* ✅ on conserve quel accordion le user voulait ouvrir */}
               <input type="hidden" name="open" value={openKey || ""} />
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  justifyContent: "flex-end",
-                  marginTop: 12,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
                 <a
                   href={buildHref(sp, { view: "home", open: null })}
                   style={{ textDecoration: "none" }}
@@ -466,7 +456,7 @@ export default async function Page({
           </div>
 
           <div style={{ marginTop: 12, opacity: 0.75, fontSize: 12 }}>
-            Paiement sécurisé • Accès immédiat • Lien d’accès envoyé par email
+            Paiement sécurisé • Accès immédiat sur ce navigateur • Lien d’accès envoyé par email
           </div>
         </div>
       </main>
@@ -475,7 +465,7 @@ export default async function Page({
 
   // ===== Helpers UI
   const AccButton = ({ k, title, sub }: { k: string; title: string; sub: string }) => {
-    // ✅ FREE : cliquer "Ouvrir" redirige vers unlock + open=k
+    // Free: clique => page unlock + mémorise l’accordéon
     if (!isPremium) {
       const href = buildHref(sp, { view: "unlock", open: k });
       return (
@@ -489,9 +479,9 @@ export default async function Page({
       );
     }
 
-    // ✅ PREMIUM : accordéon normal
+    // Premium: toggle accordéon
     const isOpen = openKey === k;
-    const href = buildHref(sp, { view: "home", open: isOpen ? "" : k });
+    const href = buildHref(sp, { open: isOpen ? "" : k, view: "home" });
 
     return (
       <a href={href} style={S.accBtn}>
@@ -510,26 +500,12 @@ export default async function Page({
   // ===== Contenu accordéons
   const ProgrammeComplet = (
     <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 10,
-          alignItems: "center",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
         <div style={{ fontWeight: 950 }}>🎯 Suggestion de plan</div>
         <div style={S.accPill}>{weekPlan.label}</div>
       </div>
 
-      <div
-        style={{
-          marginTop: 10,
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: 10,
-        }}
-      >
+      <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         {[
           {
             t: "Protéines",
@@ -557,15 +533,7 @@ export default async function Page({
             }}
           >
             <div style={{ fontWeight: 950 }}>{c.t}</div>
-            <div
-              style={{
-                marginTop: 6,
-                opacity: 0.9,
-                fontSize: 12,
-                fontWeight: 750,
-                lineHeight: 1.35,
-              }}
-            >
+            <div style={{ marginTop: 6, opacity: 0.9, fontSize: 12, fontWeight: 750, lineHeight: 1.35 }}>
               {c.d}
             </div>
             <div style={{ marginTop: 8, opacity: 0.85, fontSize: 12, fontWeight: 800 }}>
@@ -579,15 +547,7 @@ export default async function Page({
         Structure simple : 1 protéine + 1 glucide + beaucoup de légumes + une petite source de bons gras.
       </div>
 
-      <div
-        style={{
-          marginTop: 14,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <div style={{ fontWeight: 950 }}>📊 Comparateur — Standard / Entraînement / Repos</div>
         <div style={S.accPill}>Lecture rapide</div>
       </div>
@@ -686,21 +646,9 @@ export default async function Page({
 
       <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         {[
-          {
-            h: "Protéines",
-            items: ["Poulet / dinde", "Poisson", "Œufs", "Skyr / fromage blanc", "Tofu"],
-            tip: "Une portion à chaque repas.",
-          },
-          {
-            h: "Glucides",
-            items: ["Riz / pâtes", "Avoine", "Quinoa", "Patate douce", "Légumineuses"],
-            tip: "Plus hauts les jours entraînement.",
-          },
-          {
-            h: "Lipides",
-            items: ["Huile d’olive", "Avocat", "Amandes/noix", "Beurre de cacahuète (dose)", "Sardines"],
-            tip: "Un peu plus hauts les jours repos.",
-          },
+          { h: "Protéines", items: ["Poulet / dinde", "Poisson", "Œufs", "Skyr / fromage blanc", "Tofu"], tip: "Une portion à chaque repas." },
+          { h: "Glucides", items: ["Riz / pâtes", "Avoine", "Quinoa", "Patate douce", "Légumineuses"], tip: "Plus hauts les jours entraînement." },
+          { h: "Lipides", items: ["Huile d’olive", "Avocat", "Amandes/noix", "Beurre de cacahuète (dose)", "Sardines"], tip: "Un peu plus hauts les jours repos." },
         ].map((col) => (
           <div
             key={col.h}
@@ -713,9 +661,7 @@ export default async function Page({
           >
             <div style={{ fontWeight: 950 }}>{col.h}</div>
             <ul style={{ margin: "10px 0 0 18px", opacity: 0.92, fontSize: 12, fontWeight: 750, lineHeight: 1.4 }}>
-              {col.items.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
+              {col.items.map((x) => <li key={x}>{x}</li>)}
             </ul>
             <div style={{ marginTop: 10, opacity: 0.9, fontSize: 12, fontWeight: 850 }}>{col.tip}</div>
           </div>
@@ -737,26 +683,11 @@ export default async function Page({
 
       <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
         {[
-          {
-            t: "Si ton poids ne bouge pas pendant 14 jours",
-            d: "Réduis de 150 kcal par jour (en priorité sur les glucides).",
-          },
-          {
-            t: "Si tu perds trop vite (fatigue / faim / performance en baisse)",
-            d: "Ajoute 100 kcal par jour (souvent via des glucides autour de l’entraînement).",
-          },
-          {
-            t: "Jours sport : timing simple",
-            d: "Glucides avant/après (banane, riz, avoine). Protéines à chaque repas.",
-          },
-          {
-            t: "Cadre hebdomadaire",
-            d: "Semaine type 4 jours sport / 3 jours repos (adaptable). Les variations se font surtout sur glucides/lipides.",
-          },
-          {
-            t: "Rythme réaliste",
-            d: "Perte de poids : 0,4 à 1,0 kg par semaine selon ton profil. Mieux vaut régulier que parfait.",
-          },
+          { t: "Si ton poids ne bouge pas pendant 14 jours", d: "Réduis de 150 kcal par jour (en priorité sur les glucides)." },
+          { t: "Si tu perds trop vite (fatigue / faim / performance en baisse)", d: "Ajoute 100 kcal par jour (souvent via des glucides autour de l’entraînement)." },
+          { t: "Jours sport : timing simple", d: "Glucides avant/après (banane, riz, avoine). Protéines à chaque repas." },
+          { t: "Cadre hebdomadaire", d: "Semaine type 4 jours sport / 3 jours repos (adaptable). Les variations se font surtout sur glucides/lipides." },
+          { t: "Rythme réaliste", d: "Perte de poids : 0,4 à 1,0 kg par semaine selon ton profil. Mieux vaut régulier que parfait." },
         ].map((x) => (
           <div
             key={x.t}
@@ -768,9 +699,7 @@ export default async function Page({
             }}
           >
             <div style={{ fontWeight: 950 }}>{x.t}</div>
-            <div style={{ marginTop: 6, opacity: 0.9, fontSize: 12, fontWeight: 750, lineHeight: 1.35 }}>
-              {x.d}
-            </div>
+            <div style={{ marginTop: 6, opacity: 0.9, fontSize: 12, fontWeight: 750, lineHeight: 1.35 }}>{x.d}</div>
           </div>
         ))}
       </div>
@@ -786,11 +715,11 @@ export default async function Page({
 
       <div style={{ marginTop: 12 }}>
         {!Number.isFinite(targetWeight) ? (
-          <div style={S.note}>Renseigne ton poids objectif, puis clique sur Calculer.</div>
+          <div style={S.note}>Renseigne ton poids objectif (champ “Poids objectif”), puis clique sur Calculer.</div>
         ) : weeks === null ? (
-          <div style={S.note}>Objectif incohérent avec le mode choisi.</div>
+          <div style={S.note}>Objectif incohérent avec le mode choisi (ex : perte de poids mais objectif plus haut).</div>
         ) : weeks === 0 ? (
-          <div style={S.note}>Objectif “Maintien” : durée non applicable.</div>
+          <div style={S.note}>Objectif “Maintien” : durée non applicable (tu stabilises).</div>
         ) : (
           <div style={S.note}>
             {(() => {
@@ -806,12 +735,12 @@ export default async function Page({
       </div>
 
       <div style={{ marginTop: 10, fontSize: 12, opacity: 0.9, fontWeight: 800 }}>
-        Conseil : régularité + sommeil + hydratation.
+        Conseil : progression régulière + sommeil + hydratation + constance.
       </div>
     </>
   );
 
-  // ===== UI: Formulaire calcul
+  // ===== Form calcul
   const CalcForm = (
     <form method="get" action="/">
       <div style={S.grid}>
@@ -856,7 +785,6 @@ export default async function Page({
     </form>
   );
 
-  // ===== Résultats (top)
   const ResultsTop = (
     <>
       <div style={S.pills}>
@@ -881,7 +809,7 @@ export default async function Page({
       </div>
 
       <div style={S.note}>
-        • <b>BMR</b> = calories au repos. <br />
+        • <b>BMR</b> = calories au repos (énergie minimale). <br />
         • <b>TDEE</b> = calories pour maintenir ton poids avec ton activité.
       </div>
 
@@ -914,9 +842,7 @@ export default async function Page({
         <div style={S.topRow}>
           <div>
             <div style={S.title}>WeightCalc</div>
-            <div style={S.sub}>
-              Calcule ton plan simplement. {isPremium ? "Premium activé ✅" : "Version gratuite"}
-            </div>
+            <div style={S.sub}>Calcule ton plan simplement. {isPremium ? "Premium activé ✅" : "Version gratuite"}</div>
           </div>
 
           <div style={S.badge}>{isPremium ? "✅ Premium" : "🔒 Free"}</div>
@@ -927,14 +853,11 @@ export default async function Page({
 
         <hr style={S.hr} />
 
-        {/* ==============================
-            PREMIUM (accordéons)
-           ============================== */}
         <div style={S.premiumBox}>
           <div style={S.premiumHeaderRow}>
             <div style={S.premiumTitle}>{isPremium ? "✅ Premium" : "🔒 Premium"}</div>
             <div style={S.tinyExplain}>
-              Standard = base • Entraînement = jour avec sport • Repos = récupération
+              Standard = base sans sport • Entraînement = jour avec sport • Repos = récupération
             </div>
           </div>
 
@@ -955,7 +878,6 @@ export default async function Page({
             {isPremium && openKey === "temps" && <div style={S.accPanel}>{TempsCible}</div>}
           </div>
 
-          {/* CTA overlay (Free) */}
           {!isPremium && (
             <div style={S.overlay}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
