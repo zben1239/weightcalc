@@ -2,7 +2,19 @@
 
 import { useState } from "react";
 
-export default function PremiumButton() {
+type PremiumButtonProps = {
+  label?: string;
+  openKey?: string; // ex: "programme" | "semaine" | "guide" | "regles" | "temps"
+  priceLabel?: string; // ex: "2,99€"
+  className?: string;
+};
+
+export default function PremiumButton({
+  label = "Débloquer Premium",
+  openKey,
+  priceLabel = "2,99€",
+  className,
+}: PremiumButtonProps) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -14,8 +26,7 @@ export default function PremiumButton() {
       const res = await fetch("/api/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Tu peux passer des infos ici plus tard (email, etc.)
-        body: JSON.stringify({}),
+        body: JSON.stringify({ open: openKey ?? null }),
       });
 
       if (!res.ok) {
@@ -38,29 +49,29 @@ export default function PremiumButton() {
       <button
         onClick={goPremium}
         disabled={loading}
-        className="btn-primary" // si tu as déjà une classe bouton, garde-la
+        className={className ?? "btn-primary"}
         style={
-          !("btn-primary" in ({} as any))
-            ? {
+          className
+            ? undefined
+            : {
                 padding: "12px 16px",
                 borderRadius: 10,
                 border: "1px solid rgba(255,255,255,.12)",
                 cursor: loading ? "not-allowed" : "pointer",
                 background: loading ? "#3b3b3b" : "#5b5bff",
                 color: "white",
-                fontWeight: 600,
+                fontWeight: 700,
               }
-            : undefined
         }
       >
-        {loading ? "Redirection..." : "Débloquer Premium"}
+        {loading ? "Redirection..." : `${label} — ${priceLabel}`}
       </button>
 
       {err ? (
         <div style={{ fontSize: 12, opacity: 0.9 }}>
           ❌ {err}
           <div style={{ marginTop: 6, opacity: 0.8 }}>
-            Astuce : vérifie tes variables Vercel (STRIPE_SECRET_KEY / STRIPE_PRICE_ID).
+            Astuce : vérifie STRIPE_SECRET_KEY + STRIPE_PRICE_ID (Live) sur Vercel.
           </div>
         </div>
       ) : null}

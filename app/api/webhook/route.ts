@@ -5,8 +5,46 @@ import { createAccessToken } from "../../lib/token";
 import { premiumEmailHtml } from "../../lib/premiumEmail";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+function requireEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing ${name}`);
+  return v;
+}
+
+function getBaseUrl() {
+  const url =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.APP_URL ||
+    process.env.VERCEL_URL ||
+    "";
+  if (!url) return "http://localhost:3000";
+  if (url.startsWith("http")) return url;
+  return `https://${url}`;
+}
+
+function normalizeEmail(s: string) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function pickRecipientEmail(session: Stripe.Checkout.Session) {
+  const email =
+    session.customer_details?.email ||
+    session.customer_email ||
+    (session.metadata?.email as string | undefined) ||
+    "";
+
+  // ⚠️ DEV_FORCE_EMAIL uniquement hors prod
+  const devForce =
+    process.env.NODE_ENV !== "production"
+      ? normalizeEmail(process.env.DEV_FORCE_EMAIL || "")
+      : "";
+
+  return normalizeEmail(devForce || email);
+}
+
+const stripe = new Stripe(requireEnv("STRIPE_SECRET_KEY"), {
   apiVersion: "2025-12-15.clover",
 });
 
@@ -17,83 +55,60 @@ export async function POST(req: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
 
+  // IMPORTANT: Stripe a besoin du corps brut
   const rawBody = await req.text();
 
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
   } catch (err: any) {
-    return new Response(`Webhook signature error: ${err?.message ?? "unknown"}`, { status: 400 });
+    return new Response(
+      `Webhook signature error: ${err?.message ?? "unknown"}`,
+      { status: 400 }
+    );
   }
 
-  // On envoie l’email seulement quand le paiement est confirmé
-  const sendForTypes = new Set([
-    "checkout.session.completed",
-    "payment_intent.succeeded",
-  ]);
-
-  if (!sendForTypes.has(event.type)) {
+  // ✅ On traite uniquement checkout.session.completed
+  if (event.type !== "checkout.session.completed") {
     return new Response("Ignored", { status: 200 });
   }
 
   try {
-    // 1) Récupère l’email client
-    let customerEmail: string | null = null;
+    const session = event.data.object as Stripe.Checkout.Session;
 
-   if (event.type === "checkout.session.completed") {
-  const session = event.data.object as Stripe.Checkout.Session;
-
-  // ✅ le plus fiable sur Checkout
-  customerEmail = session.customer_details?.email ?? null;
-
-  // (optionnel) si tu veux être sûr de ne jamais continuer sans email :
-  // if (!customerEmail) return new Response("No email in checkout session", { status: 400 });
-}
-
-    if (event.type === "payment_intent.succeeded") {
-      const pi = event.data.object as Stripe.PaymentIntent;
-      // Stripe peut contenir receipt_email
-      customerEmail = (pi.receipt_email ?? null) as string | null;
+    // ✅ Sécurité: seulement si payé
+    if (session.payment_status !== "paid") {
+      return new Response("Not paid", { status: 200 });
     }
 
-    // 2) En sandbox Resend tu ne peux envoyer qu’à TON email propriétaire
-    // -> on force l’envoi à DEV_FORCE_EMAIL si présent
-    const to =
-      process.env.DEV_FORCE_EMAIL?.trim() ||
-      customerEmail ||
-      process.env.SUPPORT_EMAIL?.trim() ||
-      "";
-
-    if (!to) {
-      return new Response("No recipient email found", { status: 400 });
+    // ✅ Sécurité: éviter de mélanger test/live
+    const isLive = session.livemode === true;
+    const expectedLive = process.env.STRIPE_LIVEMODE === "true"; // optionnel
+    if (process.env.STRIPE_LIVEMODE && isLive !== expectedLive) {
+      return new Response("Livemode mismatch", { status: 200 });
     }
 
-    // 3) Magic link
-    const token = createAccessToken(to, 60 * 60 * 24 * 30); // 30 jours
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BASE_URL ||
-      process.env.APP_URL ||
-      "http://localhost:3000";
+    const to = pickRecipientEmail(session);
+    if (!to) return new Response("No recipient email found", { status: 400 });
 
-    const accessUrl = `${baseUrl.replace(/\/$/, "")}/api/activate?token=${encodeURIComponent(token)}`;
+    // ✅ Token 30 jours
+    const token = createAccessToken(to, 60 * 60 * 24 * 30);
 
-    // 4) Envoi Resend
-    const resendKey = process.env.RESEND_API_KEY;
-    if (!resendKey) return new Response("Missing RESEND_API_KEY", { status: 500 });
+    const baseUrl = getBaseUrl().replace(/\/$/, "");
+    const accessUrl = `${baseUrl}/api/activate?token=${encodeURIComponent(token)}`;
 
-    const resend = new Resend(resendKey);
-
+    const resend = new Resend(requireEnv("RESEND_API_KEY"));
     const from = process.env.FROM_EMAIL || "WeightCalc <onboarding@resend.dev>";
 
-    const result = await resend.emails.send({
+    await resend.emails.send({
       from,
       to,
-      subject: "✅ Ton accès Premium est activé",
-      html: premiumEmailHtml({ appName: process.env.APP_NAME || "WeightCalc", accessUrl }),
+      subject: "Votre accès WeightCalc Premium est activé ✨",
+      html: premiumEmailHtml({
+        appName: process.env.APP_NAME || "WeightCalc",
+        accessUrl,
+      }),
     });
-
-    // Log utile en dev
-    console.log("Resend result:", result);
 
     return new Response("OK", { status: 200 });
   } catch (e: any) {
